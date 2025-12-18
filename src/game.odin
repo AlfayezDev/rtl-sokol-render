@@ -1,17 +1,18 @@
 package main
-import "base:runtime"
-import "core:c"
-import "core:log"
 import rl "vendor:raylib"
-import stbsp "vendor:stb/sprintf"
 
 SCREEN_WIDTH :: 800
+SCREEN_TITLE :: "Window"
 SCREEN_HEIGHT :: 450
 
-g_ctx: runtime.Context
 setup :: proc() {
-	context.logger = log.create_console_logger(.Debug)
 }
-shutdown::proc(){
-
+frame :: proc() {
 }
+draw :: proc() {
+	rl.BeginDrawing()
+	rl.DrawFPS(0, 0)
+	rl.ClearBackground(rl.BLACK)
+	rl.EndDrawing()
+}
+shutdown :: proc() {}
