@@ -13,16 +13,11 @@ setup :: proc() {
 	log.info("Setup complete")
 }
 frame :: proc() {
-	sgl.disable_texture()
-	sgl.begin_quads()
-	sgl.c4b(255, 0, 0, 255)
-	sgl.v2f(100, 100)
-	sgl.v2f(200, 100)
-	sgl.v2f(200, 200)
-	sgl.v2f(100, 200)
-	sgl.end()
 	text("Hello World!", 50, 50)
-	// text("مرحبا بالعالم", 50, 100)
+	text("مرحبا بالعالم", 50, 100)
+	text("More text", 50, 150, {255, 0, 0, 255})
+
+	typography_flush()
 }
 draw :: proc() {
 	sg.begin_pass(
@@ -36,4 +31,5 @@ draw :: proc() {
 	sg.commit()
 }
 shutdown :: proc() {
+	typography_shutdown()
 }
