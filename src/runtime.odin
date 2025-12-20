@@ -108,7 +108,7 @@ main :: proc() {
 
 		},
 		icon = {sokol_default = true},
-		width = 800,
-		height = 600,
+		width = 1080,
+		height = 920,
 	})
 }
