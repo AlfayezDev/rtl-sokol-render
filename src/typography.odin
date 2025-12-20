@@ -83,7 +83,7 @@ typography_setup :: proc() {
 	atlasX, atlasY, atlasRowH = 1, 1, 0
 }
 
-getGlyph :: proc(glyphId: u16) -> (GlyphEntry, bool) {
+getGlyph :: proc(glyphId: u16, allocator := context.temp_allocator) -> (GlyphEntry, bool) {
 	if entry, ok := glyphCache[glyphId]; ok {
 		return entry, true
 	}
@@ -114,7 +114,7 @@ getGlyph :: proc(glyphId: u16) -> (GlyphEntry, bool) {
 	atlasRowH = max(atlasRowH, gh)
 
 	// Render to temp buffer then copy as RGBA
-	temp := make([]byte, gw * gh)
+	temp := make([]byte, gw * gh, allocator)
 	defer delete(temp)
 	stbtt.MakeGlyphBitmap(
 		&fontInfo,
