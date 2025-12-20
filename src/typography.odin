@@ -3,12 +3,11 @@ package main
 import "base:runtime"
 import sg "libs:sokol/gfx"
 import sgl "libs:sokol/gl"
-import fons "vendor:fontstash"
 import kbts "vendor:kb_text_shape"
+import stbtt "vendor:stb/truetype"
 
 FONT_SIZE :: 32.0
-ATLAS_WIDTH :: 512
-ATLAS_HEIGHT :: 512
+ATLAS_SIZE :: 1024
 MAX_TEXT_COMMANDS :: 256
 FONT_DATA :: #load("/System/Library/Fonts/Supplemental/Arial Unicode.ttf")
 
@@ -18,42 +17,58 @@ TextCommand :: struct {
 	color: [4]u8,
 }
 
+GlyphEntry :: struct {
+	id:             u16,
+	x0, y0, x1, y1: i16, // atlas coords
+	xoff, yoff:     f32, // render offset
+	advance:        f32,
+}
+
 textCommands: [MAX_TEXT_COMMANDS]TextCommand
 textCommandCount: int
 
 shapeContext: ^kbts.shape_context
-fontContext: ^fons.FontContext
-typographySampler: sg.Sampler
 OdinAllocator: runtime.Allocator
-fontNormal: int
-typographyPipeline: sgl.Pipeline
-typographyData: []byte
-typographyImage: sg.Image
-typographyView: sg.View
+
+fontInfo: stbtt.fontinfo
+fontScale: f32
+
+// Atlas
+atlasData: []byte
+atlasImage: sg.Image
+atlasView: sg.View
+atlasSampler: sg.Sampler
+atlasPipeline: sgl.Pipeline
+atlasDirty: bool
+atlasX, atlasY, atlasRowH: int
+
+// Glyph cache (glyph ID -> entry)
+glyphCache: map[u16]GlyphEntry
 
 typography_setup :: proc() {
 	OdinAllocator = context.allocator
+
+	// kb_text_shape
 	shapeContext = kbts.CreateShapeContext(kbts.AllocatorFromOdinAllocator(&OdinAllocator))
 	kbts.ShapePushFontFromMemory(shapeContext, FONT_DATA, 0)
 
-	fontContext = new(fons.FontContext)
-	fons.Init(fontContext, ATLAS_WIDTH, ATLAS_HEIGHT, .TOPLEFT)
-	fontNormal = fons.AddFontMem(fontContext, "main", FONT_DATA, false)
+	// stbtt
+	stbtt.InitFont(&fontInfo, raw_data(FONT_DATA), 0)
+	fontScale = stbtt.ScaleForPixelHeight(&fontInfo, FONT_SIZE)
 
-	typographyData = make([]byte, ATLAS_WIDTH * ATLAS_HEIGHT * 4)
-	typographyImage = sg.make_image(
+	// Atlas
+	atlasData = make([]byte, ATLAS_SIZE * ATLAS_SIZE * 4)
+	atlasImage = sg.make_image(
 		sg.Image_Desc {
-			width = ATLAS_WIDTH,
-			height = ATLAS_HEIGHT,
+			width = ATLAS_SIZE,
+			height = ATLAS_SIZE,
 			pixel_format = .RGBA8,
-			usage = {dynamic_update = true, immutable = false},
+			usage = {dynamic_update = true},
 		},
 	)
-	typographyView = sg.make_view(sg.View_Desc{texture = {image = typographyImage}})
-	typographySampler = sg.make_sampler(
-		sg.Sampler_Desc{min_filter = .LINEAR, mag_filter = .LINEAR},
-	)
-	typographyPipeline = sgl.make_pipeline(
+	atlasView = sg.make_view(sg.View_Desc{texture = {image = atlasImage}})
+	atlasSampler = sg.make_sampler(sg.Sampler_Desc{min_filter = .LINEAR, mag_filter = .LINEAR})
+	atlasPipeline = sgl.make_pipeline(
 		sg.Pipeline_Desc {
 			colors = {
 				0 = {
@@ -66,6 +81,82 @@ typography_setup :: proc() {
 			},
 		},
 	)
+
+	glyphCache = make(map[u16]GlyphEntry)
+	atlasX, atlasY, atlasRowH = 1, 1, 0
+}
+
+getGlyph :: proc(glyphId: u16) -> (GlyphEntry, bool) {
+	if entry, ok := glyphCache[glyphId]; ok {
+		return entry, true
+	}
+
+	// Rasterize
+	x0, y0, x1, y1: i32
+	stbtt.GetGlyphBitmapBox(&fontInfo, i32(glyphId), fontScale, fontScale, &x0, &y0, &x1, &y1)
+
+	gw := int(x1 - x0)
+	gh := int(y1 - y0)
+
+	if gw == 0 || gh == 0 {
+		return {}, false
+	}
+
+	// Atlas allocation (simple row packing)
+	if atlasX + gw + 1 >= ATLAS_SIZE {
+		atlasX = 1
+		atlasY += atlasRowH + 1
+		atlasRowH = 0
+	}
+	if atlasY + gh + 1 >= ATLAS_SIZE {
+		return {}, false // Atlas full
+	}
+
+	ax, ay := atlasX, atlasY
+	atlasX += gw + 1
+	atlasRowH = max(atlasRowH, gh)
+
+	// Render to temp buffer then copy as RGBA
+	temp := make([]byte, gw * gh)
+	defer delete(temp)
+	stbtt.MakeGlyphBitmap(
+		&fontInfo,
+		raw_data(temp),
+		i32(gw),
+		i32(gh),
+		i32(gw),
+		fontScale,
+		fontScale,
+		i32(glyphId),
+	)
+
+	for py in 0 ..< gh {
+		for px in 0 ..< gw {
+			alpha := temp[py * gw + px]
+			idx := ((ay + py) * ATLAS_SIZE + (ax + px)) * 4
+			atlasData[idx + 0] = 255
+			atlasData[idx + 1] = 255
+			atlasData[idx + 2] = 255
+			atlasData[idx + 3] = alpha
+		}
+	}
+	atlasDirty = true
+
+	advance, _: i32
+	stbtt.GetGlyphHMetrics(&fontInfo, i32(glyphId), &advance, nil)
+
+	entry := GlyphEntry {
+		id      = glyphId,
+		x0      = i16(ax),
+		y0      = i16(ay),
+		x1      = i16(ax + gw),
+		y1      = i16(ay + gh),
+		xoff    = f32(x0),
+		yoff    = f32(y0),
+		advance = f32(advance) * fontScale,
+	}
+	glyphCache[glyphId] = entry
+	return entry, true
 }
 
 text :: proc(str: string, x, y: f32, color: [4]u8 = {255, 255, 255, 255}) {
@@ -76,9 +167,8 @@ text :: proc(str: string, x, y: f32, color: [4]u8 = {255, 255, 255, 255}) {
 
 typography_flush :: proc() {
 	if textCommandCount == 0 do return
-	font := fons.__getFont(fontContext, fontNormal)
-	scale := fons.__getPixelHeightScale(font, FONT_SIZE)
-	// Pass 1: populate atlas
+
+	// Pass 1: ensure glyphs in atlas
 	for i in 0 ..< textCommandCount {
 		cmd := &textCommands[i]
 		kbts.ShapeBegin(shapeContext, .DONT_KNOW, .DONT_KNOW)
@@ -88,35 +178,24 @@ typography_flush :: proc() {
 		for run in kbts.ShapeRun(shapeContext) {
 			run := run
 			for glyph in kbts.GlyphIteratorNext(&run.Glyphs) {
-				fons.__getGlyph(
-					fontContext,
-					fons.__getFont(fontContext, fontNormal),
-					glyph.Codepoint,
-					i16(FONT_SIZE * 10),
-				)
+				getGlyph(glyph.Id)
 			}
 		}
 	}
 
-	// Upload atlas
-	for i in 0 ..< (ATLAS_WIDTH * ATLAS_HEIGHT) {
-		a := fontContext.textureData[i]
-		typographyData[i * 4 + 0] = 255
-		typographyData[i * 4 + 1] = 255
-		typographyData[i * 4 + 2] = 255
-		typographyData[i * 4 + 3] = a
+	// Upload atlas if dirty
+	if atlasDirty {
+		sg.update_image(
+			atlasImage,
+			sg.Image_Data{mip_levels = {0 = {ptr = raw_data(atlasData), size = len(atlasData)}}},
+		)
+		atlasDirty = false
 	}
-	sg.update_image(
-		typographyImage,
-		sg.Image_Data {
-			mip_levels = {0 = {ptr = raw_data(typographyData), size = len(typographyData)}},
-		},
-	)
 
 	// Pass 2: draw
-	sgl.load_pipeline(typographyPipeline)
+	sgl.load_pipeline(atlasPipeline)
 	sgl.enable_texture()
-	sgl.texture(typographyView, typographySampler)
+	sgl.texture(atlasView, atlasSampler)
 	sgl.begin_quads()
 
 	for i in 0 ..< textCommandCount {
@@ -131,53 +210,37 @@ typography_flush :: proc() {
 		for run in kbts.ShapeRun(shapeContext) {
 			run := run
 			for glyph in kbts.GlyphIteratorNext(&run.Glyphs) {
-				fons_glyph, ok := fons.__getGlyph(
-					fontContext,
-					font,
-					glyph.Codepoint,
-					i16(FONT_SIZE * 10),
-				)
-				if ok {
-					drawGlyph(
-						fons_glyph,
-						cmd.x + cursor_x + f32(glyph.OffsetX) * scale,
-						cmd.y + cursor_y + f32(glyph.OffsetY) * scale,
-						cmd.color,
-					)
+				if entry, ok := getGlyph(glyph.Id); ok {
+					x := cmd.x + cursor_x + f32(glyph.OffsetX) * fontScale + entry.xoff
+					y := cmd.y + cursor_y + f32(glyph.OffsetY) * fontScale + entry.yoff
+
+					x1 := x + f32(entry.x1 - entry.x0)
+					y1 := y + f32(entry.y1 - entry.y0)
+
+					s0 := f32(entry.x0) / ATLAS_SIZE
+					t0 := f32(entry.y0) / ATLAS_SIZE
+					s1 := f32(entry.x1) / ATLAS_SIZE
+					t1 := f32(entry.y1) / ATLAS_SIZE
+
+					sgl.c4b(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
+					sgl.v2f_t2f(x, y, s0, t0)
+					sgl.v2f_t2f(x1, y, s1, t0)
+					sgl.v2f_t2f(x1, y1, s1, t1)
+					sgl.v2f_t2f(x, y1, s0, t1)
 				}
-				cursor_x += f32(glyph.AdvanceX) * scale
-				cursor_y += f32(glyph.AdvanceY) * scale
+				cursor_x += f32(glyph.AdvanceX) * fontScale
+				cursor_y += f32(glyph.AdvanceY) * fontScale
 			}
 		}
 	}
 
 	sgl.end()
 	sgl.disable_texture()
-
 	textCommandCount = 0
-}
-
-drawGlyph :: proc(glyph: ^fons.Glyph, x, y: f32, color: [4]u8) {
-	x0 := x + f32(glyph.xoff)
-	y0 := y + f32(glyph.yoff)
-	x1 := x0 + f32(glyph.x1 - glyph.x0)
-	y1 := y0 + f32(glyph.y1 - glyph.y0)
-
-	s0 := f32(glyph.x0) / ATLAS_WIDTH
-	t0 := f32(glyph.y0) / ATLAS_HEIGHT
-	s1 := f32(glyph.x1) / ATLAS_WIDTH
-	t1 := f32(glyph.y1) / ATLAS_HEIGHT
-
-	sgl.c4b(color.r, color.g, color.b, color.a)
-	sgl.v2f_t2f(x0, y0, s0, t0)
-	sgl.v2f_t2f(x1, y0, s1, t0)
-	sgl.v2f_t2f(x1, y1, s1, t1)
-	sgl.v2f_t2f(x0, y1, s0, t1)
 }
 
 typography_shutdown :: proc() {
 	kbts.DestroyShapeContext(shapeContext)
-	delete(typographyData)
-	fons.Destroy(fontContext)
-	free(fontContext)
+	delete(atlasData)
+	delete(glyphCache)
 }
