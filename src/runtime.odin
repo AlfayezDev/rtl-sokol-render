@@ -3,6 +3,7 @@ import "base:runtime"
 import "core:log"
 import "core:mem/virtual"
 import sapp "libs:sokol/app"
+import cimgui "libs:sokol/cimgui"
 import sdt "libs:sokol/debugtext"
 import sg "libs:sokol/gfx"
 import sgl "libs:sokol/gl"
@@ -13,6 +14,7 @@ logger: log.Logger
 arena: virtual.Arena
 
 g_ctx: runtime.Context
+cimguiContext: ^cimgui.Context
 main :: proc() {
 
 	arenaErr := virtual.arena_init_static(&arena)
@@ -48,6 +50,8 @@ main :: proc() {
 					allocator = sdt.Allocator(shelper.allocator(&g_ctx)),
 				},
 			)
+			typography_setup()
+			cimguiContext = cimgui.setup()
 			setup()
 
 		},
@@ -55,17 +59,39 @@ main :: proc() {
 			context = g_ctx
 			w := sapp.widthf()
 			h := sapp.heightf()
+			typography_flush()
 
 			sgl.defaults()
 			sgl.matrix_mode_projection()
 			sgl.ortho(0, w, h, 0, -1, 1)
 			sgl.matrix_mode_modelview()
+			cimgui.new_frame(
+				{
+					width = sapp.width(),
+					height = sapp.height(),
+					delta_time = sapp.frame_duration(),
+					dpi_scale = sapp.dpi_scale(),
+				},
+			)
 			frame()
-			draw()
+			sg.begin_pass(
+				{
+					action = {
+						colors = {0 = {load_action = .CLEAR, clear_value = {0.1, 0.1, 0.15, 1}}},
+					},
+					swapchain = sglue.swapchain(),
+				},
+			)
+			sgl.draw()
+			cimgui.render()
+			sg.end_pass()
+			sg.commit()
 		},
 		cleanup_cb = proc "c" () {
 			context = g_ctx
 			shutdown()
+			typography_shutdown()
+			cimgui.shutdown()
 			sdt.shutdown()
 			sgl.shutdown()
 			sg.shutdown()

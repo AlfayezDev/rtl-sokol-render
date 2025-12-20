@@ -9,7 +9,7 @@ import "core:mem/virtual"
 import "core:os"
 import "core:os/os2"
 import "core:time"
-import "tools"
+import "libs"
 
 logger: log.Logger
 arena: virtual.Arena
@@ -90,7 +90,7 @@ main :: proc() {
 		for {
 			defer free_all(context.temp_allocator)
 
-			if tools.watchDirectory("./src", &lastCheck, {".odin"}, context.temp_allocator) {
+			if libs.watchDirectory("./src", &lastCheck, {".odin"}, context.temp_allocator) {
 				log.info("Rebuilding...")
 				build()
 			}
