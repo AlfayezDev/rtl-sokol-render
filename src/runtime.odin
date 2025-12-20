@@ -96,6 +96,17 @@ main :: proc() {
 			sgl.shutdown()
 			sg.shutdown()
 		},
+		event_cb = proc "c" (e: ^sapp.Event) {
+			context = g_ctx
+			if cimgui.handle_event(e) {
+				return
+			}
+
+			if e.type == .KEY_DOWN && e.key_code == .ESCAPE {
+				sapp.request_quit()
+			}
+
+		},
 		icon = {sokol_default = true},
 		width = 800,
 		height = 600,
