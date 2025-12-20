@@ -48,15 +48,12 @@ glyphCache: map[u16]GlyphEntry
 typography_setup :: proc() {
 	OdinAllocator = context.allocator
 
-	// kb_text_shape
 	shapeContext = kbts.CreateShapeContext(kbts.AllocatorFromOdinAllocator(&OdinAllocator))
 	kbts.ShapePushFontFromMemory(shapeContext, FONT_DATA, 0)
 
-	// stbtt
 	stbtt.InitFont(&fontInfo, raw_data(FONT_DATA), 0)
 	fontScale = stbtt.ScaleForPixelHeight(&fontInfo, FONT_SIZE)
 
-	// Atlas
 	atlasData = make([]byte, ATLAS_SIZE * ATLAS_SIZE * 4)
 	atlasImage = sg.make_image(
 		sg.Image_Desc {
