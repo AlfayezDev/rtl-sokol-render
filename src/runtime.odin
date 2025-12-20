@@ -53,7 +53,15 @@ main :: proc() {
 		},
 		frame_cb = proc "c" () {
 			context = g_ctx
+			w := sapp.widthf()
+			h := sapp.heightf()
+
+			sgl.defaults()
+			sgl.matrix_mode_projection()
+			sgl.ortho(0, w, h, 0, -1, 1)
+			sgl.matrix_mode_modelview()
 			frame()
+			draw()
 		},
 		cleanup_cb = proc "c" () {
 			context = g_ctx
