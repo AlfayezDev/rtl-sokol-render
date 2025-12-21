@@ -12,16 +12,19 @@ import shelper "libs:sokol/helpers"
 
 logger: log.Logger
 arena: virtual.Arena
+frameArena: virtual.Arena
 
 g_ctx: runtime.Context
 cimguiContext: ^cimgui.Context
+typography: Typography
 main :: proc() {
 
 	arenaErr := virtual.arena_init_static(&arena)
 	assert(arenaErr == nil)
-	arenaAlloc := virtual.arena_allocator(&arena)
-	context.allocator = arenaAlloc
-
+	_ = virtual.arena_init_growing(&arena)
+	context.allocator = virtual.arena_allocator(&arena)
+	_ = virtual.arena_init_growing(&frameArena)
+	context.temp_allocator = virtual.arena_allocator(&frameArena)
 	logger = log.create_console_logger()
 	context.logger = logger
 	g_ctx = context
@@ -50,16 +53,20 @@ main :: proc() {
 					allocator = sdt.Allocator(shelper.allocator(&g_ctx)),
 				},
 			)
-			typography_setup()
+			if typographySetup(&typography) == false {
+				log.error("FAILED TO LOAD TYPOGRAPHY")
+			}
 			cimguiContext = cimgui.setup()
 			setup()
 
 		},
 		frame_cb = proc "c" () {
 			context = g_ctx
+			free_all(context.temp_allocator)
+
+
 			w := sapp.widthf()
 			h := sapp.heightf()
-			typography_flush()
 
 			sgl.defaults()
 			sgl.matrix_mode_projection()
@@ -73,7 +80,9 @@ main :: proc() {
 					dpi_scale = sapp.dpi_scale(),
 				},
 			)
+			typographyBeginFrame(&typography)
 			frame()
+			typographyEndFrame(&typography)
 			sg.begin_pass(
 				{
 					action = {
@@ -90,7 +99,7 @@ main :: proc() {
 		cleanup_cb = proc "c" () {
 			context = g_ctx
 			shutdown()
-			typography_shutdown()
+			typographyShutdown(&typography)
 			cimgui.shutdown()
 			sdt.shutdown()
 			sgl.shutdown()
