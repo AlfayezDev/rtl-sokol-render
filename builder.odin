@@ -8,6 +8,8 @@ import "core:log"
 import "core:mem/virtual"
 import "core:os"
 import "core:os/os2"
+import "core:slice"
+import "core:strings"
 import "core:time"
 import "libs"
 
@@ -20,10 +22,10 @@ buildCmd: [dynamic]string = {
 	"-strict-style",
 	"-vet",
 	"-warnings-as-errors",
+	"-define:SOKOL_DLL=true",
 	"-debug",
 	"-vet-cast",
 	"-vet-style",
-	"-out:./build/app",
 }
 loadOls :: proc() {
 	data, ok := os.read_entire_file_from_filename("./ols.json")
@@ -55,15 +57,27 @@ loadOls :: proc() {
 	}
 }
 
-build :: proc() {
-	state, stdout, stderr, err := os2.process_exec({command = buildCmd[:]}, context.allocator)
+
+build :: proc(shared: bool = false) {
+	cmd := slice.clone_to_dynamic(buildCmd[:])
+	defer delete(cmd)
+
+	if shared {
+		append(&cmd, "-build-mode:shared")
+		append(&cmd, "-out:./build/dll/game")
+	} else {
+		append(&cmd, "-out:./build/app")
+	}
+
+	log.infof("%s", strings.join(cmd[:], " "))
+	state, stdout, stderr, err := os2.process_exec({command = cmd[:]}, context.allocator)
 	defer {
 		delete(stdout)
 		delete(stderr)
 	}
 
 	if err == nil && state.exit_code == 0 {
-		log.info("Build succeeded")
+		log.info("Build succeeded shared")
 	} else {
 		if len(stderr) > 0 {
 			fmt.eprintf("%s", string(stderr))
@@ -84,6 +98,8 @@ main :: proc() {
 	context.logger = logger
 
 	loadOls()
+	os2.make_directory("build")
+	os2.make_directory("build/dll")
 	when #config(watch, false) {
 		lastCheck := time.now()
 		log.info("Watching for changes")
@@ -93,6 +109,7 @@ main :: proc() {
 			if libs.watchDirectory("./src", &lastCheck, {".odin"}, context.temp_allocator) {
 				log.info("Rebuilding...")
 				build()
+				build(shared = true)
 			}
 			time.sleep(500 * time.Millisecond)
 		}

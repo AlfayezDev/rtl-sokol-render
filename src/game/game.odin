@@ -1,4 +1,5 @@
 package game
+import "base:runtime"
 import log "core:log"
 import sapp "libs:sokol/app"
 import sdt "libs:sokol/debugtext"
@@ -10,7 +11,7 @@ import shelper "libs:sokol/helpers"
 SCREEN_WIDTH :: 800
 SCREEN_HEIGHT :: 600
 
-
+g_ctx: runtime.Context
 typography: Typography
 setup :: proc() {
 	ctx := context
@@ -64,21 +65,32 @@ frame :: proc() {
 
 shutdown :: proc() {
 	typographyShutdown(&typography)
+	log.info("Shutting down")
 	sdt.shutdown()
 	sgl.shutdown()
 	sg.shutdown()
 }
 @(export)
-game_setup :: proc() {
+game_setup :: proc "c" (ctx: ^runtime.Context) {
+	g_ctx = ctx^
+	context = g_ctx
 	setup()
 }
 
 @(export)
-game_shutdown :: proc() {
+game_shutdown :: proc "c" () {
+	context = g_ctx
 	shutdown()
 }
 
 @(export)
-game_frame :: proc() {
+game_frame :: proc "c" () {
+	context = g_ctx
 	frame()
+}
+
+@(export)
+game_event :: proc "c" (e: ^sapp.Event) {
+	context = g_ctx
+	// handle events here
 }
