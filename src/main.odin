@@ -32,7 +32,7 @@ GAME_DLL_DIR :: "build/dll/"
 GAME_DLL_PATH :: GAME_DLL_DIR + "game" + DLL_EXT
 Game_API :: struct {
 	lib:         dynlib.Library,
-	setup:       proc "c" (ctx: ^runtime.Context, firstLoad: bool),
+	setup:       proc "c" (ctx: ^runtime.Context),
 	frame:       proc "c" (),
 	event:       proc "c" (e: ^sapp.Event),
 	shutdown:    proc "c" (),
@@ -85,8 +85,7 @@ unload_game_api :: proc() {
 }
 reload :: proc() {
 	lockGame = true
-	firstLoad := dllVersion == 0
-	if !firstLoad {
+	if dllVersion > 0 {
 		api.shutdown()
 		unload_game_api()
 	}
@@ -98,7 +97,7 @@ reload :: proc() {
 		log.error("api.setup is nil!")
 		return
 	}
-	api.setup(&g_ctx, firstLoad)
+	api.setup(&g_ctx)
 	dllVersion += 1
 	lockGame = false
 }
@@ -152,6 +151,9 @@ when ODIN_BUILD_MODE == .Executable {
 				context = g_ctx
 				if e.type == .KEY_DOWN && e.key_code == .ESCAPE {
 					sapp.request_quit()
+				}
+				if e.type == .KEY_DOWN && e.key_code == .R {
+					reload()
 				}
 				if api.event != nil {
 					api.event(e)

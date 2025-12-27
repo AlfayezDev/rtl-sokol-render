@@ -148,15 +148,31 @@ typographySetup :: proc(
 }
 
 typographyShutdown :: proc(t: ^Typography) {
-	sgl.destroy_pipeline(t.pipeline)
-	sg.destroy_sampler(t.atlasSampler)
-	sg.destroy_view(t.atlasView)
-	sg.destroy_image(t.atlasImage)
+	if t.pipeline.id != 0 {
+		sgl.destroy_pipeline(t.pipeline)
+	}
+	if t.atlasSampler.id != 0 {
+		sg.destroy_sampler(t.atlasSampler)
+	}
+	if t.atlasView.id != 0 {
+		sg.destroy_view(t.atlasView)
+	}
+	if t.atlasImage.id != 0 {
+		sg.destroy_image(t.atlasImage)
+	}
 
-	delete(t.atlasData, t.sessionAllocator)
-	delete(t.glyphCache) // Map stores its allocator internally
-	kbts.DestroyShapeContext(t.shapeContext)
-
+	if t.atlasData != nil {
+		delete(t.atlasData, t.sessionAllocator)
+	}
+	if t.glyphCache != nil {
+		delete(t.glyphCache)
+	}
+	if t.shapeContext != nil {
+		kbts.DestroyShapeContext(t.shapeContext)
+	}
+	if t.commands != nil {
+		delete(t.commands)
+	}
 	t^ = {}
 }
 

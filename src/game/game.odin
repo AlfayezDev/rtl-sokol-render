@@ -11,33 +11,33 @@ import shelper "libs:sokol/helpers"
 SCREEN_WIDTH :: 800
 SCREEN_HEIGHT :: 600
 
-g_ctx: runtime.Context
+ctx: runtime.Context
 typography: Typography
-sokolInitialized := false
 
-setup :: proc(firstLoad: bool) {
-	ctx := context
-	if firstLoad {
-		sg.setup(
-			sg.Desc {
-				environment = sglue.environment(),
-				logger = sg.Logger(shelper.logger(&ctx)),
-				allocator = sg.Allocator(shelper.allocator(&ctx)),
-			},
-		)
-		sgl.setup(
-			sgl.Desc {
-				logger = sgl.Logger(shelper.logger(&ctx)),
-				allocator = sgl.Allocator(shelper.allocator(&ctx)),
-			},
-		)
-		sdt.setup(
-			sdt.Desc {
-				logger = sdt.Logger(shelper.logger(&ctx)),
-				allocator = sdt.Allocator(shelper.allocator(&ctx)),
-			},
-		)
-	}
+setup :: proc() {
+	log.info("Setup sg")
+	sg.setup(
+		sg.Desc {
+			environment = sglue.environment(),
+			logger = sg.Logger(shelper.logger(&ctx)),
+			allocator = sg.Allocator(shelper.allocator(&ctx)),
+		},
+	)
+	log.info("Setup sgl")
+	sgl.setup(
+		sgl.Desc {
+			logger = sgl.Logger(shelper.logger(&ctx)),
+			allocator = sgl.Allocator(shelper.allocator(&ctx)),
+		},
+	)
+	log.info("Setup sdt")
+	sdt.setup(
+		sdt.Desc {
+			logger = sdt.Logger(shelper.logger(&ctx)),
+			allocator = sdt.Allocator(shelper.allocator(&ctx)),
+		},
+	)
+	log.info("Setup typography")
 	if typographySetup(&typography) == false {
 		log.error("FAILED TO LOAD TYPOGRAPHY")
 	}
@@ -52,7 +52,7 @@ frame :: proc() {
 	sgl.ortho(0, w, h, 0, -1, 1)
 	sgl.matrix_mode_modelview()
 	typographyBeginFrame(&typography)
-	text(&typography, "Hello123 World!", 0, 10)
+	text(&typography, "H11ello123 World!", 100, 50)
 	text(&typography, "مرحبا بالعالم", 50, 100)
 	text(&typography, "More text", 50, 150, {255, 0, 0, 255})
 	typographyEndFrame(&typography)
@@ -67,36 +67,36 @@ frame :: proc() {
 	sg.commit()
 }
 
-shutdown :: proc(finalShutdown: bool) {
+shutdown :: proc() {
 	typographyShutdown(&typography)
-	log.info("Shutting down")
-	if finalShutdown {
-		sdt.shutdown()
-		sgl.shutdown()
-		sg.shutdown()
-	}
+	sdt.shutdown()
+	log.info("Shutting sgl")
+	sgl.shutdown()
+	log.info("Shutting sg")
+	sg.shutdown()
+	log.info("Shutdown Complete")
 }
 @(export)
-game_setup :: proc "c" (ctx: ^runtime.Context, firstLoad: bool) {
-	g_ctx = ctx^
-	context = g_ctx
-	setup(firstLoad)
+game_setup :: proc "c" (_ctx: ^runtime.Context) {
+	ctx = _ctx^
+	context = ctx
+	setup()
 }
 
 @(export)
-game_shutdown :: proc "c" (finalShutdown: bool) {
-	context = g_ctx
-	shutdown(finalShutdown)
+game_shutdown :: proc "c" () {
+	context = ctx
+	shutdown()
 }
 
 @(export)
 game_frame :: proc "c" () {
-	context = g_ctx
+	context = ctx
 	frame()
 }
 
 @(export)
 game_event :: proc "c" (e: ^sapp.Event) {
-	context = g_ctx
+	context = ctx
 	// handle events here
 }
