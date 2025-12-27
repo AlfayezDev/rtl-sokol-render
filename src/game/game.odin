@@ -13,27 +13,31 @@ SCREEN_HEIGHT :: 600
 
 g_ctx: runtime.Context
 typography: Typography
-setup :: proc() {
+sokolInitialized := false
+
+setup :: proc(firstLoad: bool) {
 	ctx := context
-	sg.setup(
-		sg.Desc {
-			environment = sglue.environment(),
-			logger = sg.Logger(shelper.logger(&ctx)),
-			allocator = sg.Allocator(shelper.allocator(&ctx)),
-		},
-	)
-	sgl.setup(
-		sgl.Desc {
-			logger = sgl.Logger(shelper.logger(&ctx)),
-			allocator = sgl.Allocator(shelper.allocator(&ctx)),
-		},
-	)
-	sdt.setup(
-		sdt.Desc {
-			logger = sdt.Logger(shelper.logger(&ctx)),
-			allocator = sdt.Allocator(shelper.allocator(&ctx)),
-		},
-	)
+	if firstLoad {
+		sg.setup(
+			sg.Desc {
+				environment = sglue.environment(),
+				logger = sg.Logger(shelper.logger(&ctx)),
+				allocator = sg.Allocator(shelper.allocator(&ctx)),
+			},
+		)
+		sgl.setup(
+			sgl.Desc {
+				logger = sgl.Logger(shelper.logger(&ctx)),
+				allocator = sgl.Allocator(shelper.allocator(&ctx)),
+			},
+		)
+		sdt.setup(
+			sdt.Desc {
+				logger = sdt.Logger(shelper.logger(&ctx)),
+				allocator = sdt.Allocator(shelper.allocator(&ctx)),
+			},
+		)
+	}
 	if typographySetup(&typography) == false {
 		log.error("FAILED TO LOAD TYPOGRAPHY")
 	}
@@ -48,7 +52,7 @@ frame :: proc() {
 	sgl.ortho(0, w, h, 0, -1, 1)
 	sgl.matrix_mode_modelview()
 	typographyBeginFrame(&typography)
-	text(&typography, "Hello World!", 0, 10)
+	text(&typography, "Hello123 World!", 0, 10)
 	text(&typography, "مرحبا بالعالم", 50, 100)
 	text(&typography, "More text", 50, 150, {255, 0, 0, 255})
 	typographyEndFrame(&typography)
@@ -63,24 +67,26 @@ frame :: proc() {
 	sg.commit()
 }
 
-shutdown :: proc() {
+shutdown :: proc(finalShutdown: bool) {
 	typographyShutdown(&typography)
 	log.info("Shutting down")
-	sdt.shutdown()
-	sgl.shutdown()
-	sg.shutdown()
+	if finalShutdown {
+		sdt.shutdown()
+		sgl.shutdown()
+		sg.shutdown()
+	}
 }
 @(export)
-game_setup :: proc "c" (ctx: ^runtime.Context) {
+game_setup :: proc "c" (ctx: ^runtime.Context, firstLoad: bool) {
 	g_ctx = ctx^
 	context = g_ctx
-	setup()
+	setup(firstLoad)
 }
 
 @(export)
-game_shutdown :: proc "c" () {
+game_shutdown :: proc "c" (finalShutdown: bool) {
 	context = g_ctx
-	shutdown()
+	shutdown(finalShutdown)
 }
 
 @(export)

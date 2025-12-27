@@ -9,6 +9,8 @@ import "core:time"
 import libs "libs:/"
 import sapp "libs:sokol/app"
 import shelper "libs:sokol/helpers"
+_ :: shelper
+_ :: libs
 
 logger: log.Logger
 arena: virtual.Arena
@@ -16,6 +18,7 @@ frameArena: virtual.Arena
 g_ctx: runtime.Context
 lastCheck: time.Time
 lockGame := false
+
 when ODIN_OS == .Windows {
 	DLL_EXT :: ".dll"
 } else when ODIN_OS == .Darwin {
@@ -29,7 +32,7 @@ GAME_DLL_DIR :: "build/dll/"
 GAME_DLL_PATH :: GAME_DLL_DIR + "game" + DLL_EXT
 Game_API :: struct {
 	lib:         dynlib.Library,
-	setup:       proc "c" (ctx: ^runtime.Context),
+	setup:       proc "c" (ctx: ^runtime.Context, firstLoad: bool),
 	frame:       proc "c" (),
 	event:       proc "c" (e: ^sapp.Event),
 	shutdown:    proc "c" (),
@@ -47,10 +50,20 @@ loadGameApi :: proc() -> bool {
 	gameDllName := fmt.tprintf(GAME_DLL_DIR + "game_{0}" + DLL_EXT, dllVersion)
 	copyDll(gameDllName) or_return
 	log.info("Loading", gameDllName)
+
 	_, ok := dynlib.initialize_symbols(&api, gameDllName, "game_", "lib")
 	if !ok {
-		log.errorf("Failed initializing symbols: {0}", dynlib.last_error())
+		log.errorf("Failed initializing symbols: %s", dynlib.last_error())
+		return false
 	}
+	log.infof(
+		"setup=%v frame=%v shutdown=%v event=%v",
+		api.setup != nil,
+		api.frame != nil,
+		api.shutdown != nil,
+		api.event != nil,
+	)
+
 	api.api_version = dllVersion
 	return true
 }
@@ -72,65 +85,81 @@ unload_game_api :: proc() {
 }
 reload :: proc() {
 	lockGame = true
-	if dllVersion > 0 {
+	firstLoad := dllVersion == 0
+	if !firstLoad {
 		api.shutdown()
 		unload_game_api()
 	}
-	loadGameApi()
-	api.setup(&g_ctx)
+	if !loadGameApi() {
+		log.error("Failed to load game API")
+		return
+	}
+	if api.setup == nil {
+		log.error("api.setup is nil!")
+		return
+	}
+	api.setup(&g_ctx, firstLoad)
 	dllVersion += 1
 	lockGame = false
-
 }
-main :: proc() {
+when ODIN_BUILD_MODE == .Executable {
 
-	arenaErr := virtual.arena_init_static(&arena)
-	assert(arenaErr == nil)
-	_ = virtual.arena_init_growing(&arena)
-	context.allocator = virtual.arena_allocator(&arena)
-	_ = virtual.arena_init_growing(&frameArena)
-	context.temp_allocator = virtual.arena_allocator(&frameArena)
-	logger = log.create_console_logger()
-	context.logger = logger
-	g_ctx = context
+	main :: proc() {
 
-	lastCheck = time.now()
-	sapp.run(sapp.Desc {
-		logger = sapp.Logger(shelper.logger(&g_ctx)),
-		allocator = sapp.Allocator(shelper.allocator(&g_ctx)),
-		init_cb = proc "c" () {
-			context = g_ctx
-			reload()
-		},
-		frame_cb = proc "c" () {
-			context = g_ctx
-			if lockGame {
-				return
-			}
-			free_all(context.temp_allocator)
+		arenaErr := virtual.arena_init_static(&arena)
+		assert(arenaErr == nil)
+		_ = virtual.arena_init_growing(&arena)
+		context.allocator = virtual.arena_allocator(&arena)
+		_ = virtual.arena_init_growing(&frameArena)
+		context.temp_allocator = virtual.arena_allocator(&frameArena)
+		logger = log.create_console_logger()
+		context.logger = logger
+		g_ctx = context
 
-			if libs.watchDirectory(GAME_DLL_DIR, &lastCheck, {DLL_EXT}, context.temp_allocator) {
-				log.info("Reloading...")
+		lastCheck = time.now()
+		sapp.run(sapp.Desc {
+			logger = sapp.Logger(shelper.logger(&g_ctx)),
+			allocator = sapp.Allocator(shelper.allocator(&g_ctx)),
+			init_cb = proc "c" () {
+				context = g_ctx
 				reload()
-				return
-			}
-			api.frame()
-		},
-		cleanup_cb = proc "c" () {
-			context = g_ctx
-			api.shutdown()
-		},
-		event_cb = proc "c" (e: ^sapp.Event) {
-			context = g_ctx
-			if e.type == .KEY_DOWN && e.key_code == .ESCAPE {
-				sapp.request_quit()
-			}
-			if api.event != nil {
-				api.event(e)
-			}
-		},
-		icon = {sokol_default = true},
-		width = 1080,
-		height = 920,
-	})
+			},
+			frame_cb = proc "c" () {
+				context = g_ctx
+				if lockGame {
+					return
+				}
+				free_all(context.temp_allocator)
+
+				if libs.watchDirectory(
+					GAME_DLL_DIR,
+					&lastCheck,
+					{DLL_EXT},
+					{".dSYM"},
+					context.temp_allocator,
+				) {
+					log.info("Reloading...")
+					reload()
+					return
+				}
+				api.frame()
+			},
+			cleanup_cb = proc "c" () {
+				context = g_ctx
+				api.shutdown()
+			},
+			event_cb = proc "c" (e: ^sapp.Event) {
+				context = g_ctx
+				if e.type == .KEY_DOWN && e.key_code == .ESCAPE {
+					sapp.request_quit()
+				}
+				if api.event != nil {
+					api.event(e)
+				}
+			},
+			icon = {sokol_default = true},
+			width = 1080,
+			height = 920,
+		})
+	}
 }

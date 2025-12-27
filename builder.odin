@@ -63,6 +63,13 @@ build :: proc(shared: bool = false) {
 	defer delete(cmd)
 
 	if shared {
+		// Replace ./src with ./src/game for DLL build
+		for &c in cmd {
+			if c == "./src" {
+				c = "./src/game"
+				break
+			}
+		}
 		append(&cmd, "-build-mode:shared")
 		append(&cmd, "-out:./build/dll/game")
 	} else {
@@ -98,6 +105,7 @@ main :: proc() {
 	context.logger = logger
 
 	loadOls()
+
 	os2.make_directory("build")
 	os2.make_directory("build/dll")
 	when #config(watch, false) {
@@ -108,6 +116,8 @@ main :: proc() {
 
 			if libs.watchDirectory("./src", &lastCheck, {".odin"}, context.temp_allocator) {
 				log.info("Rebuilding...")
+				os2.make_directory("build")
+				os2.make_directory("build/dll")
 				build()
 				build(shared = true)
 			}

@@ -10,6 +10,7 @@ watchDirectory :: proc(
 	dir: string,
 	lastCheck: ^time.Time,
 	extensions: []string,
+	ignore: []string = {},
 	allocator: runtime.Allocator = context.temp_allocator,
 ) -> bool {
 	handle, err := os2.open(dir)
@@ -24,7 +25,16 @@ watchDirectory :: proc(
 
 	for fi in files {
 		if fi.type == .Directory {
-			if watchDirectory(fi.fullpath, lastCheck, extensions, allocator) {
+			// Skip ignored directories
+			shouldIgnore := false
+			for pattern in ignore {
+				if strings.has_suffix(fi.name, pattern) {
+					shouldIgnore = true
+					break
+				}
+			}
+			if shouldIgnore do continue
+			if watchDirectory(fi.fullpath, lastCheck, extensions, ignore, allocator) {
 				changed = true
 				if time.diff(mostRecentChange, lastCheck^) > 0 {
 					mostRecentChange = lastCheck^
