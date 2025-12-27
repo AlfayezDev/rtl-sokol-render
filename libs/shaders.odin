@@ -1,13 +1,9 @@
 package libs
 
-import "core:c"
-import "core:c/libc"
 import "core:fmt"
 import "core:log"
-import "core:os"
 import "core:os/os2"
 import "core:path/filepath"
-import "core:strings"
 
 getSokolShdcPath :: proc() -> string {
 	// Get the root directory (two levels up from libs/)
@@ -49,7 +45,7 @@ buildShader :: proc(
 	defines := []string{},
 ) -> bool {
 	shdcPath := getSokolShdcPath()
-	if !os.exists(shdcPath) {
+	if !os2.exists(shdcPath) {
 		fmt.eprintf("sokol-shdc not found at: %s\n", shdcPath)
 		return false
 	}
@@ -64,7 +60,7 @@ buildShader :: proc(
 		append(&command, "-d", define)
 	}
 
-	desc := os2.Process_Desc{
+	desc := os2.Process_Desc {
 		command = command[:],
 	}
 	state, stdout, stderr, err := os2.process_exec(desc, context.allocator)
@@ -76,7 +72,6 @@ buildShader :: proc(
 		return false
 	}
 
-	exitCode := state.exit_code
 
 	if state.success {
 		log.info("Shader built successfully: %s -> %s", inputPath, outputPath)
