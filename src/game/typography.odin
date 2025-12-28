@@ -248,7 +248,6 @@ ensureGlyphsForText :: proc(t: ^Typography, str: string) {
 		}
 	}
 }
-
 @(private = "file")
 drawTextCommand :: proc(t: ^Typography, cmd: ^TextCommand) {
 	kbts.ShapeBegin(t.shapeContext, .DONT_KNOW, .DONT_KNOW)
